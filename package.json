@@ -1,0 +1,28 @@
+{
+  "name": "lit-oracle-kit",
+  "version": "0.1.0",
+  "description": "SDK for executing Lit Actions as oracles and writing to chain",
+  "main": "dist/lit-oracle-kit.js",
+  "types": "dist/lit-oracle-kit.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lit-protocol/constants": "^7.0.0",
+    "@lit-protocol/contracts": "^0.0.71",
+    "@lit-protocol/lit-node-client-nodejs": "^7.0.0",
+    "ethers": "^5.7.2",
+    "node-localstorage": "^3.0.5"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.24",
+    "dotenv": "^16.4.5",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.3.3"
+  }
+}
