@@ -10,18 +10,21 @@ import { LIT_NETWORKS_KEYS } from "@lit-protocol/types";
 import { LitContracts } from "@lit-protocol/contracts-sdk";
 import Hash from "ipfs-only-hash";
 import { getSessionSigs } from "./utils";
+import { LocalStorage } from "node-localstorage";
+
 declare global {
   var localStorage: Storage;
 }
 
 if (typeof localStorage === "undefined" || localStorage === null) {
-  const { LocalStorage } = require("node-localstorage");
   global.localStorage = new LocalStorage("./lit-session-storage");
 }
 
 interface FetchToChainParams {
   dataSource: string;
   functionAbi: string;
+  toAddress: string;
+  chain: string;
 }
 
 export class LitOracleKit {
@@ -29,7 +32,10 @@ export class LitOracleKit {
   private ethersWallet: ethers.Signer;
   private litNetwork: LIT_NETWORKS_KEYS;
 
-  constructor(litNetwork: LIT_NETWORKS_KEYS = LIT_NETWORK.DatilDev) {
+  constructor(
+    litNetwork: LIT_NETWORKS_KEYS = LIT_NETWORK.DatilDev,
+    privateKey: string
+  ) {
     this.litNetwork = litNetwork;
     this.litNodeClient = new LitNodeClientNodeJs({
       litNetwork: this.litNetwork,
@@ -37,7 +43,7 @@ export class LitOracleKit {
       debug: false,
     });
     this.ethersWallet = new ethers.Wallet(
-      process.env.LIT_ORACLE_KIT_PRIVATE_KEY!,
+      privateKey,
       new ethers.providers.JsonRpcProvider(LIT_RPC.CHRONICLE_YELLOWSTONE)
     );
   }
@@ -58,24 +64,34 @@ export class LitOracleKit {
     litActionCode: string;
     ipfsCid: string;
   }> {
-    const { dataSource, functionAbi } = params;
+    const { dataSource } = params;
 
     const litActionCode = `
       (async () => {
         // fetch the data
-        const data = await (async () => {
+        const functionArgs = await (async () => {
             ${dataSource}
         })();
-        // create a txn (example random data for testing)
-        const serializedTxn = ethers.utils.arrayify("0x65b84f5c21a9137aa915ca0a44f3eeb6d34261a238753ffcddd6eb0b4a63ea26")
+        // create the txn
+        const iface = new ethers.utils.Interface([functionAbi]);
+        const txData = iface.encodeFunctionData(iface.functions[0].name, functionArgs);
+        const tx = {
+            to: toAddress,
+            data: txData,
+            from: ethers.utils.computeAddress(pkpPublicKey)
+        };
+        const serializedTxn = ethers.utils.serializeTransaction(tx);
         // sign the txn
         const sig = await Lit.Actions.signAndCombineEcdsa({ toSign: serializedTxn, publicKey: pkpPublicKey.slice(2), sigName: "sig1" })
         // send the txn to chain
+        const rpcUrl = Lit.Actions.getRpcUrl(chain);
+        const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+        const txn = await provider.sendTransaction(tx);
 
         // return the txn hash
         const response = {
-            data,
-            txnHash: sig,
+            functionArgs,
+            txnHash: txn.hash,
         }
         Lit.Actions.setResponse({ response: JSON.stringify(response) });
       })();
@@ -152,6 +168,8 @@ export class LitOracleKit {
       jsParams: {
         pkpPublicKey,
         functionAbi: params.functionAbi,
+        toAddress: params.toAddress,
+        chain: params.chain,
       },
     });
 
@@ -159,6 +177,5 @@ export class LitOracleKit {
   }
 }
 
-// Export both the class and a singleton instance
-export const litOracleKit = new LitOracleKit();
+// Export just the class
 export default LitOracleKit;

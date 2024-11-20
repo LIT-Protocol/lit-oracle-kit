@@ -1,0 +1,23 @@
+{
+  "name": "hardhat-weather-oracle",
+  "version": "1.0.0",
+  "description": "Example usage of lit-oracle-kit with a weather oracle contract",
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.ts --network yellowstone",
+    "update-weather": "npx tsx scripts/update-weather.ts"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@types/node": "^20.11.24",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.19.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@lit-protocol/lit-oracle-kit": "file:../.."
+  }
+}
