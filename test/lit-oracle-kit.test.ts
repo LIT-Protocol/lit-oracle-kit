@@ -36,7 +36,7 @@ describe("LitOracleKit Integration Tests", () => {
       `,
     });
 
-    // console.log(result);
+    console.log(result);
 
     const { data, txnHash } = JSON.parse(result.response);
 
