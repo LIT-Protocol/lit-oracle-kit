@@ -46,6 +46,10 @@ export class LitOracleKit {
     return this.litNodeClient.ready;
   }
 
+  disconnect(): Promise<void> {
+    return this.litNodeClient.disconnect();
+  }
+
   async generateLitActionCode(params: FetchToChainParams): Promise<string> {
     const { dataSource, functionAbi } = params;
 
@@ -59,7 +63,11 @@ export class LitOracleKit {
         // const txn = await ${functionAbi}(data);
         // send the txn to chain
         // return the txn hash
-        Lit.Actions.setResponse({ response: JSON.stringify(data) });
+        const response = {
+            data,
+            txnHash: "0x1234",
+        }
+        Lit.Actions.setResponse({ response: JSON.stringify(response) });
       })();
     `;
   }
@@ -70,7 +78,7 @@ export class LitOracleKit {
     }
 
     const litActionCode = await this.generateLitActionCode(params);
-    console.log(`Running code: ${litActionCode}`);
+    // console.log(`Running code: ${litActionCode}`);
     const sessionSigs = await getSessionSigs(
       this.litNodeClient,
       this.ethersWallet

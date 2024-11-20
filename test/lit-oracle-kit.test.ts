@@ -36,11 +36,14 @@ describe("LitOracleKit Integration Tests", () => {
       `,
     });
 
-    console.log(result);
+    // console.log(result);
+
+    const { data, txnHash } = JSON.parse(result.response);
 
     // Verify the response contains the expected data structure
-    expect(result).toHaveProperty("response");
-    expect(result.response).toHaveProperty("temp");
-    expect(result.response).toHaveProperty("probabilityOfPrecipitation");
+    expect(data).toHaveProperty("temp");
+    expect(data).toHaveProperty("probabilityOfPrecipitation");
+    expect(txnHash).toBeDefined();
+    await sdk.disconnect();
   }, 30000); // Increased timeout for network requests
 });
