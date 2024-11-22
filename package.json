@@ -8,6 +8,10 @@
   "exports": {
     ".": "./dist/lit-oracle-kit.js"
   },
+  "private": false,
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "jest",
