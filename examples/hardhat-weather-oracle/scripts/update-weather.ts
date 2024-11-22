@@ -35,6 +35,11 @@ async function main() {
   });
 
   console.log("Weather update transaction:", result);
+
+  const response = JSON.parse(result.response);
+  const { txnHash } = response;
+  const explorerUrl = `https://yellowstone-explorer.litprotocol.com/tx/${txnHash}`;
+  console.log("Explorer URL:", explorerUrl);
 }
 
 main().catch((error) => {

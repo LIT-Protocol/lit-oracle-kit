@@ -6,7 +6,7 @@ import {
   AUTH_METHOD_TYPE,
   AUTH_METHOD_SCOPE,
 } from "@lit-protocol/constants";
-import { LIT_NETWORKS_KEYS } from "@lit-protocol/types";
+import { LIT_NETWORKS_KEYS, ExecuteJsResponse } from "@lit-protocol/types";
 import { LitContracts } from "@lit-protocol/contracts-sdk";
 import Hash from "ipfs-only-hash";
 import { getSessionSigs } from "./utils";
@@ -25,6 +25,13 @@ interface FetchToChainParams {
   functionAbi: string;
   toAddress: string;
   chain: string;
+}
+
+interface MintedPkpInfo {
+  publicKey: string;
+  ethAddress: string;
+  tokenId: string;
+  ipfsCid: string;
 }
 
 export class LitOracleKit {
@@ -74,24 +81,89 @@ export class LitOracleKit {
         })();
         // create the txn
         const iface = new ethers.utils.Interface([functionAbi]);
-        const txData = iface.encodeFunctionData(iface.functions[0].name, functionArgs);
-        const tx = {
-            to: toAddress,
-            data: txData,
-            from: ethers.utils.computeAddress(pkpPublicKey)
-        };
-        const serializedTxn = ethers.utils.serializeTransaction(tx);
-        // sign the txn
-        const sig = await Lit.Actions.signAndCombineEcdsa({ toSign: serializedTxn, publicKey: pkpPublicKey.slice(2), sigName: "sig1" })
-        // send the txn to chain
-        const rpcUrl = Lit.Actions.getRpcUrl(chain);
+        const txData = iface.encodeFunctionData(iface.functions[Object.keys(iface.functions)[0]].name, functionArgs);
+        
+        const fromAddress = ethers.utils.computeAddress(pkpPublicKey);
+
+        const rpcUrl = await Lit.Actions.getRpcUrl({ chain });
         const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
-        const txn = await provider.sendTransaction(tx);
+
+        // Get the network's current values and check for EIP-1559 support
+        const [
+            feeData,
+            nonce,
+            chainId,
+            estimatedGas,
+            block
+        ] = await Promise.all([
+            provider.getFeeData(),
+            provider.getTransactionCount(fromAddress),
+            provider.getNetwork().then(network => network.chainId),
+            provider.estimateGas({
+                from: fromAddress,
+                to: toAddress,
+                data: txData,
+            }),
+            provider.getBlock('latest')
+        ]);
+
+        // Check if network supports EIP-1559
+        const supportsEIP1559 = block.baseFeePerGas != null;
+
+        // Prepare the unsigned transaction
+        let unsignedTx;
+        
+        if (supportsEIP1559 && feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
+            // EIP-1559 transaction
+            unsignedTx = {
+                to: toAddress,
+                nonce: nonce,
+                gasLimit: estimatedGas,
+                maxFeePerGas: feeData.maxFeePerGas,
+                maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
+                data: txData,
+                chainId: chainId,
+                type: 2, // EIP-1559
+                value: ethers.BigNumber.from(0),
+                accessList: [],
+            };
+            // console.log("EIP-1559 Tx:", unsignedTx);
+        } else {
+            // Legacy transaction
+            unsignedTx = {
+                to: toAddress,
+                nonce: nonce,
+                gasLimit: estimatedGas,
+                gasPrice: feeData.gasPrice,
+                data: txData,
+                chainId: chainId,
+                value: ethers.BigNumber.from(0),
+            };
+            // console.log("Legacy Tx:", unsignedTx);
+        }
+        const serializedTx = ethers.utils.serializeTransaction(unsignedTx);
+
+        const hashedTxToSign = ethers.utils.arrayify(ethers.utils.keccak256(serializedTx));
+        // sign the txn
+        const sig = await Lit.Actions.signAndCombineEcdsa({ toSign: hashedTxToSign, publicKey: pkpPublicKey.slice(2), sigName: "sig1" })
+
+        const jsonSignature = JSON.parse(sig);
+        jsonSignature.r = "0x" + jsonSignature.r.substring(2);
+        jsonSignature.s = "0x" + jsonSignature.s;
+        const hexSignature = ethers.utils.joinSignature(jsonSignature);
+
+        // craft the final txn with the signature attached
+        const signedTx = ethers.utils.serializeTransaction(unsignedTx, hexSignature);
+        // send the txn to chain
+        const txHash = await Lit.Actions.runOnce({waitForResponse: true, name: "txSender"}, async () => {
+            const txn = await provider.sendTransaction(signedTx);
+            return txn.hash;
+        });
 
         // return the txn hash
         const response = {
             functionArgs,
-            txnHash: txn.hash,
+            txnHash: txHash,
         }
         Lit.Actions.setResponse({ response: JSON.stringify(response) });
       })();
@@ -101,7 +173,7 @@ export class LitOracleKit {
     return { litActionCode, ipfsCid };
   }
 
-  async mintAndBindPkp(ipfsCid: string): Promise<string> {
+  async mintAndBindPkp(ipfsCid: string): Promise<MintedPkpInfo> {
     const litContracts = new LitContracts({
       signer: this.ethersWallet,
       network: this.litNetwork,
@@ -137,24 +209,57 @@ export class LitOracleKit {
     // console.log("Minted!", receipt);
     // get the pkp public key from the mint event
     const pkpId = receipt.logs[0].topics[1];
-    const pkpInfo = await litContracts.pubkeyRouterContract.read.pubkeys(
+    const pkpPubkeyInfo = await litContracts.pubkeyRouterContract.read.pubkeys(
       ethers.BigNumber.from(pkpId)
     );
-    console.log("PKP Info:", pkpInfo);
-    const pkpPublicKey = pkpInfo.pubkey;
-    console.log("PKP Public Key:", pkpPublicKey);
-    return pkpPublicKey;
+    // console.log("PKP Info:", pkpPubkeyInfo);
+    const pkpPublicKey = pkpPubkeyInfo.pubkey;
+    // console.log("PKP Public Key:", pkpPublicKey);
+
+    // save the pkp info to local storage, keyed by ipfs hash
+    const pkpEthAddress = ethers.utils.computeAddress(pkpPublicKey);
+    const pkpInfo = {
+      publicKey: pkpPublicKey,
+      ethAddress: pkpEthAddress,
+      tokenId: pkpId,
+      ipfsCid,
+    };
+
+    // let's fund the pkp with some gas
+    const fundingTxn = await this.ethersWallet.sendTransaction({
+      to: pkpInfo.ethAddress,
+      value: ethers.utils.parseEther("0.001"),
+    });
+    await fundingTxn.wait();
+    console.log("Funded PKP!", fundingTxn.hash);
+    return pkpInfo;
   }
 
-  async writeToChain(params: FetchToChainParams): Promise<any> {
+  async writeToChain(params: FetchToChainParams): Promise<ExecuteJsResponse> {
     if (!this.litNodeClient.ready) {
       await this.connect();
     }
 
     const { litActionCode, ipfsCid } = await this.generateLitActionCode(params);
 
+    // save the code to localstorage, so we can audit in the future
+    localStorage.setItem(`lit-action-code-${ipfsCid}`, litActionCode);
+
     // check if we need to mint a pkp for this ipfs cid
-    const pkpPublicKey = await this.mintAndBindPkp(ipfsCid);
+    let pkpFromLocalStorage = localStorage.getItem(
+      `pkp-for-ipfsCid-${ipfsCid}`
+    );
+    let pkpInfo: MintedPkpInfo;
+    if (!pkpFromLocalStorage) {
+      pkpInfo = await this.mintAndBindPkp(ipfsCid);
+      localStorage.setItem(
+        `pkp-for-ipfsCid-${ipfsCid}`,
+        JSON.stringify(pkpInfo)
+      );
+    } else {
+      pkpInfo = JSON.parse(pkpFromLocalStorage);
+    }
+    const pkpPublicKey = pkpInfo.publicKey;
 
     // console.log(`Running code: ${litActionCode}`);
     const sessionSigs = await getSessionSigs(
@@ -171,6 +276,31 @@ export class LitOracleKit {
         toAddress: params.toAddress,
         chain: params.chain,
       },
+    });
+
+    return result;
+  }
+
+  async testDataSource(dataSource: string): Promise<ExecuteJsResponse> {
+    // console.log(`Running code: ${litActionCode}`);
+    const sessionSigs = await getSessionSigs(
+      this.litNodeClient,
+      this.ethersWallet
+    );
+
+    const litActionCode = `        
+      (async () => {
+        // fetch the data
+        const functionArgs = await (async () => {
+            ${dataSource}
+        })();
+        Lit.Actions.setResponse({ response: JSON.stringify(functionArgs) });
+      })();
+       `;
+
+    const result = await this.litNodeClient.executeJs({
+      code: litActionCode,
+      sessionSigs,
     });
 
     return result;
