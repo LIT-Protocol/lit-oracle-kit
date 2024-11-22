@@ -40,7 +40,7 @@ const result = await sdk.writeToChain({
 `,
   functionAbi:
     "function updateWeather(int256 temperature, uint8 precipitationProbability) external",
-  toAddress: contractAddress,
+  toAddress: "0xE2c2A8A1f52f8B19A46C97A6468628db80d31673",
   chain: "yellowstone",
 });
 ```
@@ -52,3 +52,33 @@ const result = await sdk.writeToChain({
 The examples/hardhat-weather-oracle directory contains a simple example of how to use this kit to fetch weather data from the NOAA API and write it to a chain using the Lit Oracle Kit.
 
 The script [update-weather.ts](./examples/hardhat-weather-oracle/scripts/update-weather.ts) fetches the weather data and writes it to the chain by calling the `updateWeather` function on the deployed [WeatherOracle contract](./examples/hardhat-weather-oracle/contracts/WeatherOracle.sol).
+
+## Writing your data source
+
+You can test your data source retrieval code using the `testDataSource()` function. This will simply run your code on the Lit Nodes and return the result, so you can confirm that it's retrieving the correct values.
+
+```ts
+import { LitOracleKit } from "lit-oracle-kit";
+
+const sdk = new LitOracleKit(
+  "datil-dev",
+  process.env.LIT_ORACLE_KIT_PRIVATE_KEY!
+);
+await sdk.connect();
+
+const result = await sdk.testDataSource(`
+    const url = "https://api.weather.gov/gridpoints/LWX/97,71/forecast";
+    const response = await fetch(url).then((res) => res.json());
+    const nearestForecast = response.properties.periods[0];
+    const temp = nearestForecast.temperature;
+    const probabilityOfPrecipitation = nearestForecast.probabilityOfPrecipitation.value || 0;
+    return [ temp, probabilityOfPrecipitation ];
+`);
+
+// this will output your return value, so you can confirm it's correct
+console.log(result.response);
+```
+
+## Support
+
+You can find support information, including Discord and Telegram support channels, here: https://developer.litprotocol.com/support/intro

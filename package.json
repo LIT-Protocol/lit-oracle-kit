@@ -1,6 +1,6 @@
 {
   "name": "@lit-protocol/lit-oracle-kit",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "SDK for executing Lit Actions as oracles and writing to chain",
   "main": "dist/lit-oracle-kit.js",
   "types": "dist/lit-oracle-kit.d.ts",
