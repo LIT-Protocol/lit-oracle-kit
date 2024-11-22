@@ -79,6 +79,15 @@ const result = await sdk.testDataSource(`
 console.log(result.response);
 ```
 
+## Documentation
+
+- [API Documentation](https://lit-protocol.github.io/lit-oracle-kit/)
+- [Example Project](./examples/hardhat-weather-oracle/)
+
+## License
+
+MIT
+
 ## Support
 
 You can find support information, including Discord and Telegram support channels, here: https://developer.litprotocol.com/support/intro

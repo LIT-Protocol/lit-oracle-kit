@@ -20,25 +20,49 @@ if (typeof localStorage === "undefined" || localStorage === null) {
   global.localStorage = new LocalStorage("./lit-session-storage");
 }
 
+/**
+ * Interface for parameters passed to writeToChain and related methods
+ */
 interface FetchToChainParams {
+  /** JavaScript code that fetches data and returns an array of arguments for the smart contract function */
   dataSource: string;
+  /** Solidity function signature that will be called with the data */
   functionAbi: string;
+  /** Address of the contract to call */
   toAddress: string;
+  /** Chain to execute the transaction on (e.g., "yellowstone") */
   chain: string;
 }
 
+/**
+ * Information about a minted PKP (Programmable Key Pair)
+ */
 interface MintedPkpInfo {
+  /** Public key of the PKP */
   publicKey: string;
+  /** Ethereum address derived from the PKP */
   ethAddress: string;
+  /** Token ID of the PKP NFT */
   tokenId: string;
+  /** IPFS CID of the Lit Action code bound to this PKP */
   ipfsCid: string;
 }
 
+/**
+ * LitOracleKit provides functionality to create and manage oracles using Lit Protocol.
+ * It allows fetching off-chain data and writing it to blockchain smart contracts using
+ * Programmable Key Pairs (PKPs).
+ */
 export class LitOracleKit {
   private litNodeClient: LitNodeClientNodeJs;
   private ethersWallet: ethers.Signer;
   private litNetwork: LIT_NETWORKS_KEYS;
 
+  /**
+   * Creates a new instance of LitOracleKit
+   * @param litNetwork - The Lit Network to connect to (e.g., "datil-dev")
+   * @param privateKey - Private key used for signing transactions and minting PKPs
+   */
   constructor(
     litNetwork: LIT_NETWORKS_KEYS = LIT_NETWORK.DatilDev,
     privateKey: string
@@ -55,18 +79,35 @@ export class LitOracleKit {
     );
   }
 
+  /**
+   * Connects to the Lit Network
+   * @returns Promise that resolves when connection is established
+   */
   async connect(): Promise<void> {
     await this.litNodeClient.connect();
   }
 
+  /**
+   * Checks if the client is connected to the Lit Network
+   * @returns true if connected, false otherwise
+   */
   ready(): boolean {
     return this.litNodeClient.ready;
   }
 
+  /**
+   * Disconnects from the Lit Network
+   * @returns Promise that resolves when disconnection is complete
+   */
   disconnect(): Promise<void> {
     return this.litNodeClient.disconnect();
   }
 
+  /**
+   * Generates Lit Action code and returns it along with its IPFS CID
+   * @param params - Parameters for generating the Lit Action code
+   * @returns Object containing the generated code and its IPFS CID
+   */
   async generateLitActionCode(params: FetchToChainParams): Promise<{
     litActionCode: string;
     ipfsCid: string;
@@ -173,6 +214,11 @@ export class LitOracleKit {
     return { litActionCode, ipfsCid };
   }
 
+  /**
+   * Mints a new PKP and binds it to the given Lit Action IPFS CID
+   * @param ipfsCid - IPFS CID of the Lit Action to bind to the PKP
+   * @returns Information about the minted PKP
+   */
   async mintAndBindPkp(ipfsCid: string): Promise<MintedPkpInfo> {
     const litContracts = new LitContracts({
       signer: this.ethersWallet,
@@ -231,10 +277,34 @@ export class LitOracleKit {
       value: ethers.utils.parseEther("0.001"),
     });
     await fundingTxn.wait();
-    console.log("Funded PKP!", fundingTxn.hash);
+    // console.log("Funded PKP!", fundingTxn.hash);
+    localStorage.setItem(`pkp-for-ipfsCid-${ipfsCid}`, JSON.stringify(pkpInfo));
+    console.log(
+      `Minted PKP with address ${pkpInfo.ethAddress} and funded with 0.001 ETH`
+    );
     return pkpInfo;
   }
 
+  /**
+   * Executes a Lit Action to fetch data and write it to a smart contract
+   * @param params - Parameters specifying the data source, contract, and function to call
+   * @returns Response from the Lit Action execution
+   *
+   * @example
+   * ```typescript
+   * const result = await sdk.writeToChain({
+   *   dataSource: `
+   *     const url = "https://api.weather.gov/gridpoints/LWX/97,71/forecast";
+   *     const response = await fetch(url).then((res) => res.json());
+   *     const nearestForecast = response.properties.periods[0];
+   *     return [nearestForecast.temperature, nearestForecast.probabilityOfPrecipitation.value || 0];
+   *   `,
+   *   functionAbi: "function updateWeather(int256 temperature, uint8 precipitationProbability) external",
+   *   toAddress: "0xYourContractAddress",
+   *   chain: "yellowstone"
+   * });
+   * ```
+   */
   async writeToChain(params: FetchToChainParams): Promise<ExecuteJsResponse> {
     if (!this.litNodeClient.ready) {
       await this.connect();
@@ -252,13 +322,10 @@ export class LitOracleKit {
     let pkpInfo: MintedPkpInfo;
     if (!pkpFromLocalStorage) {
       pkpInfo = await this.mintAndBindPkp(ipfsCid);
-      localStorage.setItem(
-        `pkp-for-ipfsCid-${ipfsCid}`,
-        JSON.stringify(pkpInfo)
-      );
     } else {
       pkpInfo = JSON.parse(pkpFromLocalStorage);
     }
+    console.log(`Writing data to chain from PKP address ${pkpInfo.ethAddress}`);
     const pkpPublicKey = pkpInfo.publicKey;
 
     // console.log(`Running code: ${litActionCode}`);
@@ -281,6 +348,20 @@ export class LitOracleKit {
     return result;
   }
 
+  /**
+   * Tests a data source function without writing to chain
+   * @param dataSource - JavaScript code that fetches and returns data
+   * @returns Response containing the fetched data
+   *
+   * @example
+   * ```typescript
+   * const result = await sdk.testDataSource(`
+   *   const url = "https://api.weather.gov/gridpoints/LWX/97,71/forecast";
+   *   const response = await fetch(url).then((res) => res.json());
+   *   return [response.properties.periods[0].temperature];
+   * `);
+   * ```
+   */
   async testDataSource(dataSource: string): Promise<ExecuteJsResponse> {
     // console.log(`Running code: ${litActionCode}`);
     const sessionSigs = await getSessionSigs(
