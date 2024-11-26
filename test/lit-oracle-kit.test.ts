@@ -20,6 +20,10 @@ describe("LitOracleKit Integration Tests", () => {
     await sdk.connect();
   });
 
+  afterAll(async () => {
+    await sdk.disconnect();
+  });
+
   test("should successfully connect to Lit Network", async () => {
     expect(sdk.ready()).toBe(true);
   });
@@ -66,7 +70,5 @@ describe("LitOracleKit Integration Tests", () => {
     // Verify the response contains the expected data structure
     expect(functionArgs).toHaveLength(2);
     expect(txnHash).toBeDefined();
-
-    await sdk.disconnect();
   }, 30000); // Increased timeout for network requests
 });
