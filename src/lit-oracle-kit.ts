@@ -281,6 +281,12 @@ export class LitOracleKit {
     return pkpInfo;
   }
 
+  /**
+   * Checks the balance of a PKP and funds it if it's low
+   * @param pkpEthAddress - Ethereum address of the PKP
+   * @param fundIfLow - Whether to fund the PKP if it's low
+   * @returns Balance of the PKP in ETH
+   */
   async checkPkpBalance(
     pkpEthAddress: string,
     fundIfLow: boolean = false
@@ -301,6 +307,11 @@ export class LitOracleKit {
     return balanceInEth;
   }
 
+  /**
+   * Funds a PKP with 0.001 ETH if the balance is less than 0.00001 ETH
+   * @param pkpEthAddress - Ethereum address of the PKP
+   * @returns Transaction hash of the funding transaction
+   */
   async fundPkp(pkpEthAddress: string): Promise<string> {
     console.log(`Funding PKP with 0.001 ETH`);
     const fundingTxn = await this.ethersWallet.sendTransaction({
