@@ -35,6 +35,18 @@ interface FetchToChainParams {
 }
 
 /**
+ * Interface for parameters passed to readLatestDataFromChain
+ */
+interface ReadFromChainParams {
+  /** Solidity function signature that will be called to read data */
+  functionAbi: string;
+  /** Address of the contract to read from */
+  contractAddress: string;
+  /** Chain to read from (e.g., "yellowstone") */
+  chain: string;
+}
+
+/**
  * Information about a minted PKP (Programmable Key Pair)
  */
 interface MintedPkpInfo {
@@ -386,6 +398,48 @@ export class LitOracleKit {
     });
 
     return result;
+  }
+
+  /**
+   * Reads data from a smart contract on the blockchain
+   * @param params - Parameters specifying the function to call and the contract to read from
+   * @returns Response from the read operation
+   *
+   * @example
+   * ```typescript
+   * const weatherData = await sdk.readFromChain<WeatherData>({
+   *   functionAbi: "function currentWeather() view returns (int256 temperature, uint8 precipitationProbability, uint256 lastUpdated)",
+   *   contractAddress: "0xE2c2A8A1f52f8B19A46C97A6468628db80d31673",
+   *   chain: "yellowstone"
+   * });
+   * ```
+   */
+  async readFromChain<T>(params: ReadFromChainParams): Promise<T> {
+    if (!this.litNodeClient.ready) {
+      await this.connect();
+    }
+
+    const provider = new ethers.providers.JsonRpcProvider(
+      LIT_RPC.CHRONICLE_YELLOWSTONE
+    );
+
+    // Create contract interface using the provided function ABI
+    const contractInterface = new ethers.utils.Interface([params.functionAbi]);
+
+    const contract = new ethers.Contract(
+      params.contractAddress,
+      contractInterface,
+      provider
+    );
+
+    // Get the function name from the ABI
+    const functionName =
+      contractInterface.functions[Object.keys(contractInterface.functions)[0]]
+        .name;
+
+    // Call the function and return the result
+    const result = await contract[functionName]();
+    return result as T;
   }
 
   /**
