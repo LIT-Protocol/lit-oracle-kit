@@ -272,17 +272,45 @@ export class LitOracleKit {
     };
 
     // let's fund the pkp with some gas
-    const fundingTxn = await this.ethersWallet.sendTransaction({
-      to: pkpInfo.ethAddress,
-      value: ethers.utils.parseEther("0.001"),
-    });
-    await fundingTxn.wait();
-    // console.log("Funded PKP!", fundingTxn.hash);
+    await this.fundPkp(pkpEthAddress);
+
     localStorage.setItem(`pkp-for-ipfsCid-${ipfsCid}`, JSON.stringify(pkpInfo));
     console.log(
       `Minted PKP with address ${pkpInfo.ethAddress} and funded with 0.001 ETH`
     );
     return pkpInfo;
+  }
+
+  async checkPkpBalance(
+    pkpEthAddress: string,
+    fundIfLow: boolean = false
+  ): Promise<string> {
+    let balance = await this.ethersWallet.provider!.getBalance(
+      pkpEthAddress,
+      "latest"
+    );
+    let balanceInEth = ethers.utils.formatEther(balance);
+    console.log(`PKP balance: ${balanceInEth} ETH`);
+
+    if (fundIfLow && parseFloat(balanceInEth) <= 0.00001) {
+      await this.fundPkp(pkpEthAddress);
+
+      return this.checkPkpBalance(pkpEthAddress, false);
+    }
+
+    return balanceInEth;
+  }
+
+  async fundPkp(pkpEthAddress: string): Promise<string> {
+    console.log(`Funding PKP with 0.001 ETH`);
+    const fundingTxn = await this.ethersWallet.sendTransaction({
+      to: pkpEthAddress,
+      value: ethers.utils.parseEther("0.001"),
+    });
+    await fundingTxn.wait();
+    console.log(`Funded PKP: ${fundingTxn.hash}`);
+
+    return fundingTxn.hash;
   }
 
   /**
@@ -324,6 +352,7 @@ export class LitOracleKit {
       pkpInfo = await this.mintAndBindPkp(ipfsCid);
     } else {
       pkpInfo = JSON.parse(pkpFromLocalStorage);
+      await this.checkPkpBalance(pkpInfo.ethAddress, true);
     }
     console.log(`Writing data to chain from PKP address ${pkpInfo.ethAddress}`);
     const pkpPublicKey = pkpInfo.publicKey;
