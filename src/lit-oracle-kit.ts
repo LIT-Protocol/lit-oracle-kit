@@ -35,6 +35,18 @@ interface FetchToChainParams {
 }
 
 /**
+ * Interface for parameters passed to readLatestDataFromChain
+ */
+interface ReadFromChainParams {
+  /** Solidity function signature that will be called to read data */
+  functionAbi: string;
+  /** Address of the contract to read from */
+  contractAddress: string;
+  /** Chain to read from (e.g., "yellowstone") */
+  chain: string;
+}
+
+/**
  * Information about a minted PKP (Programmable Key Pair)
  */
 interface MintedPkpInfo {
@@ -272,17 +284,56 @@ export class LitOracleKit {
     };
 
     // let's fund the pkp with some gas
-    const fundingTxn = await this.ethersWallet.sendTransaction({
-      to: pkpInfo.ethAddress,
-      value: ethers.utils.parseEther("0.001"),
-    });
-    await fundingTxn.wait();
-    // console.log("Funded PKP!", fundingTxn.hash);
+    await this.fundPkp(pkpEthAddress);
+
     localStorage.setItem(`pkp-for-ipfsCid-${ipfsCid}`, JSON.stringify(pkpInfo));
     console.log(
       `Minted PKP with address ${pkpInfo.ethAddress} and funded with 0.001 ETH`
     );
     return pkpInfo;
+  }
+
+  /**
+   * Checks the balance of a PKP and funds it if it's low
+   * @param pkpEthAddress - Ethereum address of the PKP
+   * @param fundIfLow - Whether to fund the PKP if it's low
+   * @returns Balance of the PKP in ETH
+   */
+  async checkPkpBalance(
+    pkpEthAddress: string,
+    fundIfLow: boolean = false
+  ): Promise<string> {
+    let balance = await this.ethersWallet.provider!.getBalance(
+      pkpEthAddress,
+      "latest"
+    );
+    let balanceInEth = ethers.utils.formatEther(balance);
+    console.log(`PKP balance: ${balanceInEth} ETH`);
+
+    if (fundIfLow && parseFloat(balanceInEth) <= 0.00001) {
+      await this.fundPkp(pkpEthAddress);
+
+      return this.checkPkpBalance(pkpEthAddress, false);
+    }
+
+    return balanceInEth;
+  }
+
+  /**
+   * Funds a PKP with 0.001 ETH if the balance is less than 0.00001 ETH
+   * @param pkpEthAddress - Ethereum address of the PKP
+   * @returns Transaction hash of the funding transaction
+   */
+  async fundPkp(pkpEthAddress: string): Promise<string> {
+    console.log(`Funding PKP with 0.001 ETH`);
+    const fundingTxn = await this.ethersWallet.sendTransaction({
+      to: pkpEthAddress,
+      value: ethers.utils.parseEther("0.001"),
+    });
+    await fundingTxn.wait();
+    console.log(`Funded PKP: ${fundingTxn.hash}`);
+
+    return fundingTxn.hash;
   }
 
   /**
@@ -324,6 +375,7 @@ export class LitOracleKit {
       pkpInfo = await this.mintAndBindPkp(ipfsCid);
     } else {
       pkpInfo = JSON.parse(pkpFromLocalStorage);
+      await this.checkPkpBalance(pkpInfo.ethAddress, true);
     }
     console.log(`Writing data to chain from PKP address ${pkpInfo.ethAddress}`);
     const pkpPublicKey = pkpInfo.publicKey;
@@ -346,6 +398,48 @@ export class LitOracleKit {
     });
 
     return result;
+  }
+
+  /**
+   * Reads data from a smart contract on the blockchain
+   * @param params - Parameters specifying the function to call and the contract to read from
+   * @returns Response from the read operation
+   *
+   * @example
+   * ```typescript
+   * const weatherData = await sdk.readFromChain<WeatherData>({
+   *   functionAbi: "function currentWeather() view returns (int256 temperature, uint8 precipitationProbability, uint256 lastUpdated)",
+   *   contractAddress: "0xE2c2A8A1f52f8B19A46C97A6468628db80d31673",
+   *   chain: "yellowstone"
+   * });
+   * ```
+   */
+  async readFromChain<T>(params: ReadFromChainParams): Promise<T> {
+    if (!this.litNodeClient.ready) {
+      await this.connect();
+    }
+
+    const provider = new ethers.providers.JsonRpcProvider(
+      LIT_RPC.CHRONICLE_YELLOWSTONE
+    );
+
+    // Create contract interface using the provided function ABI
+    const contractInterface = new ethers.utils.Interface([params.functionAbi]);
+
+    const contract = new ethers.Contract(
+      params.contractAddress,
+      contractInterface,
+      provider
+    );
+
+    // Get the function name from the ABI
+    const functionName =
+      contractInterface.functions[Object.keys(contractInterface.functions)[0]]
+        .name;
+
+    // Call the function and return the result
+    const result = await contract[functionName]();
+    return result as T;
   }
 
   /**

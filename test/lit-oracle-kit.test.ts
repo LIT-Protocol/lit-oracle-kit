@@ -2,6 +2,9 @@ import { LitOracleKit } from "../src/lit-oracle-kit";
 import { LitNodeClientNodeJs } from "@lit-protocol/lit-node-client-nodejs";
 
 describe("LitOracleKit Integration Tests", () => {
+  const deployedWeatherOracleContractAddress =
+    "0xE2c2A8A1f52f8B19A46C97A6468628db80d31673";
+
   let sdk: LitOracleKit;
 
   beforeAll(async () => {
@@ -18,6 +21,10 @@ describe("LitOracleKit Integration Tests", () => {
     );
     // Connect to Lit Network before running tests
     await sdk.connect();
+  });
+
+  afterAll(async () => {
+    await sdk.disconnect();
   });
 
   test("should successfully connect to Lit Network", async () => {
@@ -42,8 +49,6 @@ describe("LitOracleKit Integration Tests", () => {
   }, 30000); // Increased timeout for network requests
 
   test("should execute a Lit Action that fetches weather data", async () => {
-    const deployedWeatherOracleContractAddress =
-      "0xE2c2A8A1f52f8B19A46C97A6468628db80d31673";
     const result = await sdk.writeToChain({
       dataSource: `
             const url = "https://api.weather.gov/gridpoints/LWX/97,71/forecast";
@@ -66,7 +71,30 @@ describe("LitOracleKit Integration Tests", () => {
     // Verify the response contains the expected data structure
     expect(functionArgs).toHaveLength(2);
     expect(txnHash).toBeDefined();
-
-    await sdk.disconnect();
   }, 30000); // Increased timeout for network requests
+
+  test("should read latest weather data from chain", async () => {
+    interface WeatherData {
+      temperature: bigint;
+      precipitationProbability: bigint;
+      lastUpdated: bigint;
+    }
+
+    const weatherData = await sdk.readFromChain<WeatherData>({
+      functionAbi:
+        "function currentWeather() view returns (int256 temperature, uint8 precipitationProbability, uint256 lastUpdated)",
+      contractAddress: deployedWeatherOracleContractAddress,
+      chain: "yellowstone",
+    });
+
+    // Verify the response contains the expected data structure
+    expect(weatherData.temperature).toBeDefined();
+    expect(weatherData.precipitationProbability).toBeDefined();
+    expect(weatherData.lastUpdated).toBeDefined();
+
+    // Verify the lastUpdated timestamp is recent (within last 2 minutes)
+    const lastUpdatedDate = new Date(Number(weatherData.lastUpdated) * 1000);
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+    expect(lastUpdatedDate.getTime()).toBeGreaterThan(twoMinutesAgo.getTime());
+  }, 60000); // Increased timeout for network requests
 });
