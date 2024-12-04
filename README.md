@@ -1,4 +1,4 @@
-# Lit Oracle Kit
+# Lit Oracle Kit (Chain Signatures)
 
 This is a simple kit demonstrating how the Lit Network can be used to sign data pulled from the web (or another blockchain) and write it to chain. This may be a useful primitive for several different use cases, such as generating verifiable data proofs, using off-chain data to trigger blockchain transactions, or performing cross-chain message passing with chain signatures (using a state change on Chain A to trigger a state change on Chain B.)
 
